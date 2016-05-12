@@ -1,0 +1,154 @@
+#!/bin/bash
+# Install requeriments
+#   echo "ddf requeriments list\n sshpass"
+#   echo "Install requeriments"
+#   sudo apt-get install sshpass -y
+
+docker="sudo docker"
+if [ -e .ddf ]; then
+  machineName=$(cat .ddf/machineName)
+  machineImage="$machineName-img"
+else
+  validation="Error: Could not find .ddf config directory"
+fi
+
+# Build image
+function buildImage {
+  echo "Create image with name $machineImage"
+  $docker build -t $machineImage .
+}
+
+# Create docker container from image
+function createMachine {
+  message="Create docker container from $machineImage with name $machineName"
+  code="$docker create -P --name $machineName $machineImage"
+  if [ $# -gt 1 ] && [ $1 = "-a" ]; then
+    buildImage && $code
+  else
+    $code
+  fi
+}
+
+# Start machine
+function startMachine {
+  $docker start $machineName
+}
+
+# Stop machine
+function stopMachine {
+  $docker stop $machineName
+}
+
+# Destroy created image
+function destroyImage {
+  $docker rmi $machineImage
+}
+
+
+# Destroy created container
+function destroyMachine {
+  if [ $# -gt 1 ] && [ $1 = "-a" ]; then
+    $docker rm $(cat .ddf/machineName) && destroyImage
+  else
+    $docker rm $(cat .ddf/machineName)
+  fi
+}
+
+# Connect with started container
+function sshMachine {
+  # Get machine port
+  machinePort=$($docker port $machineName 22 | awk -F: '{print $2}')
+  # Get user from Dockerfile image
+  sshUser=$(grep "ENV USERNAME" Dockerfile | awk '{ print $3 }')
+  sshPassword=$(grep "ENV USERPASSWORD" Dockerfile | awk '{ print $3 }')
+
+  if [ $# -lt 1 ]; then
+    sshpass -p $sshPassword \
+    ssh -a -p $machinePort \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    $sshUser@localhost
+  else
+    # Pass all arguments to the end of command for send commands to ssh machine
+    sshpass -p $sshPassword \
+    ssh -a -p $machinePort \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    $sshUser@localhost '@'
+  fi
+}
+
+# Create new project
+function new {
+  if [ $# -lt 1 ]; then
+    echo "ddf init need a name, ex: ddf init awesomeMachine"
+  else
+    mkdir $1/.ddf -p
+    echo $1 > $1/.ddf/machineName
+    cp ~/.ddf/templates/BaseGitignore $1/.gitinore
+    cp ~/.ddf/templates/BaseDockerfile $1/Dockerfile
+  fi
+}
+
+function helpMachine {
+  echo "
+ddf
+  new [machine-name] -> create project of ddf
+
+  build -> create image from Dockerfile
+
+  create -> create docker from image (use -a for auto create image)
+
+  start -> start created machine
+
+  stop -> stop running machine
+
+  destroy -> destroy machine (user -a for destroy image to)
+
+  ssh -> connect to machine (arguments will be passed to ssh command)
+
+  help -> display this message
+"
+}
+
+function checkValidations {
+  if [ -n "$validation" ]; then
+    echo $validation
+    exit 1
+  fi
+}
+
+case $1 in
+  new)
+    new $2
+    ;;
+  build)
+    checkValidations
+    buildImage
+    ;;
+  create)
+    checkValidations
+    createMachine $2
+    ;;
+  start)
+    checkValidations
+    startMachine
+    ;;
+  stop)
+    checkValidations
+    stopMachine
+    ;;
+  destroy)
+    checkValidations
+    destroyMachine $2
+    ;;
+  ssh)
+    checkValidations
+    arguments=( "$@" )
+    sshMachine ${arguments[@]:1}
+    ;;
+  help)
+    helpMachine
+    ;;
+  *)
+    helpMachine
+    exit 1
+esac

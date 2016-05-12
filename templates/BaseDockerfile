@@ -1,0 +1,35 @@
+FROM ubuntu:14.04
+# Set the maintainer
+#MAINTAINER Your name
+
+# Install updates
+RUN apt-get update
+
+# SSH user
+# You can change the user, and password,
+# but keep the name of envairoment variables
+# default user and password are dffu
+ENV USERNAME dffu
+ENV USERPASSWORD dffu
+# Create and configure user
+RUN useradd -ms /bin/bash $USERNAME
+# User with empty password
+RUN echo "$USERNAME:$USERPASSWORD" | chpasswd
+# Enable passwordless sudo for user
+RUN apt-get update && apt-get install -y sudo && apt-get clean
+RUN mkdir -p /etc/sudoers.d
+RUN echo "$USERNAME ALL= NOPASSWD: ALL" > /etc/sudoers.d/$USERNAME
+RUN chmod 0440 /etc/sudoers.d/$USERNAME
+
+# Install ssh server
+RUN apt-get update && apt-get install -y openssh-server && apt-get clean
+RUN mkdir /var/run/sshd
+
+#######################
+# Add here your build #
+#######################
+
+# Star with ssh server
+USER root
+CMD ["/usr/sbin/sshd", "-D", "-e"]
+EXPOSE 22
